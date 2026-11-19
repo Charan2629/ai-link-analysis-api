@@ -196,6 +196,11 @@ ai-link-analysis/
    GEMINI_API_KEY=AIzaSyYourActualKeyHere
    GEMINI_MODEL=gemini-3.5-flash-lite
    GEMINI_FALLBACK_MODEL=gemini-3.8-flash
+
+   #Optional cross-provider failover (only used if Gemini hits 503/429 spikes)
+   #GROQ_API_KEY=gsk_your_optional_groq_key
+   #GROQ_MODEL=openai/gpt-oss-120b
+   
    PORT=4000
    HOST=0.0.0.0
    ```
