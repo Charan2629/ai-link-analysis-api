@@ -4,7 +4,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.config import get_settings
 from app.schemas import ErrorResponse, LinkAnalysisRequest, LinkAnalysisResponse
@@ -148,6 +148,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 
 # API Endpoints
+@app.get("/", include_in_schema=False)
+async def root():
+    """Redirect root path to interactive API documentation."""
+    return RedirectResponse(url="/docs")
+
+
 @app.get("/health", summary="Health Check")
 async def health_check():
     """Service health and readiness check."""

@@ -176,6 +176,31 @@ def clean_raw_json(raw_text: str) -> str:
     return text
 
 
+def is_transient_error(exc: Exception) -> bool:
+    """Check if exception represents a transient 503 UNAVAILABLE or 429 RESOURCE_EXHAUSTED error."""
+    # Check google.genai APIError code and status attributes
+    code = getattr(exc, "code", None)
+    status_str = getattr(exc, "status", None)
+    if code in (429, 503):
+        return True
+    if status_str and str(status_str).upper() in ("RESOURCE_EXHAUSTED", "UNAVAILABLE"):
+        return True
+
+    # Fallback inspection on error string
+    err_str = str(exc).upper()
+    return any(
+        indicator in err_str
+        for indicator in (
+            "503",
+            "UNAVAILABLE",
+            "429",
+            "RESOURCE_EXHAUSTED",
+            "QUOTA EXCEEDED",
+            "RATE LIMIT",
+        )
+    )
+
+
 def execute_llm_call(
     client: genai.Client,
     model_name: str,
@@ -183,16 +208,29 @@ def execute_llm_call(
 ) -> Tuple[str, TokenUsage]:
     """Execute synchronous call to Gemini API using google-genai SDK."""
     try:
+        # Note: for gemini-4-* models, do not pass thinking_budget or custom sampling
+        # params (temperature/top_p/top_k) — use default settings or thinking_level="low"
+        # to avoid 400 validation errors.
+        if model_name.startswith("gemini-4"):
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                thinking_config=types.ThinkingConfig(thinking_level="low"),
+            )
+        else:
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.2,
+            )
+
         response = client.models.generate_content(
             model=model_name,
             contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.2,
-            ),
+            config=config,
         )
     except Exception as exc:
         logger.error(f"Gemini API call failed for model '{model_name}': {exc}")
+        if is_transient_error(exc):
+            raise exc
         raise LLMServiceException(f"LLM API request failed: {exc}") from exc
 
     raw_text = response.text or ""
@@ -212,55 +250,82 @@ def execute_llm_call(
 async def analyze_website_with_llm(
     website_context: str,
     competitor_hints: list[str],
+    backoff_delays: Optional[list[float]] = None,
 ) -> Tuple[BrandInfo, AnalysisResult, str, TokenUsage]:
     """
     Analyze website content using Google Gemini via google-genai SDK.
-    Uses gemini-3.5-flash-lite as primary model with automatic 1-retry fallback.
+    Fallback chain: gemini-3.5-flash-lite -> gemini-3.8-flash -> gemini-4-hydrogen.
+    Retries with short exponential backoff (2s, then 4s) for transient 503/429 errors.
     """
     settings = get_settings()
     client = get_genai_client()
 
     prompt = build_analysis_prompt(website_context, competitor_hints)
 
+    # Fallback chain across 3 models
     models_to_try = [
         settings.GEMINI_MODEL or "gemini-3.5-flash-lite",
         settings.GEMINI_FALLBACK_MODEL or "gemini-3.8-flash",
+        settings.GEMINI_FALLBACK_MODEL_2 or "gemini-4-hydrogen",
     ]
 
+    transient_delays = backoff_delays if backoff_delays is not None else [2.0, 4.0]
     last_error: Optional[Exception] = None
 
     for attempt_idx, model_name in enumerate(models_to_try):
-        try:
-            logger.info(f"Attempting LLM analysis with model '{model_name}' (attempt {attempt_idx + 1}/2)")
-            raw_text, token_usage = await asyncio.to_thread(
-                execute_llm_call,
-                client,
-                model_name,
-                prompt,
-            )
+        for retry_idx in range(len(transient_delays) + 1):
+            try:
+                logger.info(
+                    f"Attempting LLM analysis with model '{model_name}' "
+                    f"(chain {attempt_idx + 1}/{len(models_to_try)}, attempt {retry_idx + 1})"
+                )
+                raw_text, token_usage = await asyncio.to_thread(
+                    execute_llm_call,
+                    client,
+                    model_name,
+                    prompt,
+                )
 
-            cleaned_json = clean_raw_json(raw_text)
-            parsed_data = json.loads(cleaned_json)
+                cleaned_json = clean_raw_json(raw_text)
+                parsed_data = json.loads(cleaned_json)
 
-            # Validate sections
-            brand = BrandInfo.model_validate(parsed_data.get("brand", {}))
-            analysis = AnalysisResult.model_validate(parsed_data.get("analysis", {}))
+                # Validate sections
+                brand = BrandInfo.model_validate(parsed_data.get("brand", {}))
+                analysis = AnalysisResult.model_validate(parsed_data.get("analysis", {}))
 
-            return brand, analysis, model_name, token_usage
+                return brand, analysis, model_name, token_usage
 
-        except (json.JSONDecodeError, ValueError) as json_err:
-            logger.warning(
-                f"JSON parse error on attempt {attempt_idx + 1} with model '{model_name}': {json_err}"
-            )
-            last_error = LLMServiceException(
-                f"LLM output could not be parsed into required JSON schema: {json_err}"
-            )
-            continue
-        except LLMServiceException as llm_err:
-            logger.warning(
-                f"LLM execution error on attempt {attempt_idx + 1} with model '{model_name}': {llm_err}"
-            )
-            last_error = llm_err
-            continue
+            except Exception as exc:
+                if is_transient_error(exc):
+                    if retry_idx < len(transient_delays):
+                        backoff = transient_delays[retry_idx]
+                        logger.warning(
+                            f"Transient error ({exc}) on model '{model_name}'. "
+                            f"Retrying with exponential backoff in {backoff}s..."
+                        )
+                        await asyncio.sleep(backoff)
+                        continue
+                    else:
+                        logger.warning(
+                            f"Exhausted transient retries for model '{model_name}'. "
+                            "Proceeding to next model in fallback chain..."
+                        )
+                        last_error = LLMServiceException(f"Transient limit on '{model_name}': {exc}")
+                        break
+
+                if isinstance(exc, (json.JSONDecodeError, ValueError)):
+                    logger.warning(
+                        f"JSON parse error on attempt {attempt_idx + 1} with model '{model_name}': {exc}"
+                    )
+                    last_error = LLMServiceException(
+                        f"LLM output could not be parsed into required JSON schema: {exc}"
+                    )
+                    break
+
+                logger.warning(
+                    f"LLM execution error on model '{model_name}': {exc}"
+                )
+                last_error = exc if isinstance(exc, LLMServiceException) else LLMServiceException(str(exc))
+                break
 
     raise last_error or LLMServiceException("All LLM analysis attempts failed.")

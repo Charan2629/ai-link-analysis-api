@@ -20,6 +20,11 @@ from app.schemas import (
     TokenUsage,
 )
 from app.services.analysis_service import analysis_cache
+from app.services.llm_service import (
+    analyze_website_with_llm,
+    execute_llm_call,
+    is_transient_error,
+)
 from app.services.website_extractor import (
     EmptyContentException,
     ExtractedWebsiteData,
@@ -528,3 +533,98 @@ def test_health_check_endpoint():
     assert data["status"] == "healthy"
     assert "AI-Powered Website Link Analysis API" in data["service"]
     assert "gemini-3.5-flash-lite" in data["model"]
+
+
+def test_root_redirect_to_docs():
+    """Verify GET / redirects to /docs (so Render root URL never shows 404)."""
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code in (302, 307)
+    assert response.headers["location"] == "/docs"
+
+
+def test_is_transient_error_detection():
+    """Verify transient error classifier detects 503 UNAVAILABLE and 429 RESOURCE_EXHAUSTED."""
+    # Custom dummy objects mimicking APIError
+    class DummyAPIError(Exception):
+        def __init__(self, code, status):
+            self.code = code
+            self.status = status
+            super().__init__(f"{code} {status}")
+
+    assert is_transient_error(DummyAPIError(429, "RESOURCE_EXHAUSTED")) is True
+    assert is_transient_error(DummyAPIError(503, "UNAVAILABLE")) is True
+    assert is_transient_error(Exception("503 Service Unavailable: High load")) is True
+    assert is_transient_error(Exception("429 Resource Exhausted: Rate limit reached")) is True
+    assert is_transient_error(Exception("Quota exceeded for quota metric")) is True
+
+    # Non-transient errors
+    assert is_transient_error(Exception("400 Bad Request: Invalid field")) is False
+    assert is_transient_error(ValueError("Invalid JSON schema")) is False
+
+
+def test_gemini_4_hydrogen_config_no_sampling_params():
+    """
+    Ensure gemini-4-* models do not pass thinking_budget or custom sampling params
+    (temperature/top_p/top_k), avoiding 400 validation errors.
+    """
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = json.dumps(MOCK_LLM_OUTPUT)
+    mock_response.usage_metadata = None
+    mock_client.models.generate_content.return_value = mock_response
+
+    # Call with gemini-4-hydrogen
+    execute_llm_call(mock_client, "gemini-4-hydrogen", "test prompt")
+
+    call_args = mock_client.models.generate_content.call_args
+    assert call_args is not None
+    used_config = call_args.kwargs.get("config")
+    assert used_config is not None
+    # Sampling parameters must remain None
+    assert used_config.temperature is None
+    assert used_config.top_p is None
+    assert used_config.top_k is None
+    # Thinking config must have thinking_level low and thinking_budget None
+    assert used_config.thinking_config is not None
+    assert used_config.thinking_config.thinking_level.name.lower() == "low" or used_config.thinking_config.thinking_level == "low"
+    assert used_config.thinking_config.thinking_budget is None
+
+
+@pytest.mark.asyncio
+async def test_transient_exponential_backoff_and_fallback_chain():
+    """
+    Verify analyze_website_with_llm retries with exponential backoff on transient errors
+    and falls back through the chain (gemini-3.5-flash-lite -> gemini-3.8-flash -> gemini-4-hydrogen).
+    """
+    call_history = []
+
+    def fake_execute(client, model_name, prompt):
+        call_history.append(model_name)
+        # Fail primary model with transient 429 twice, then 429 again to force fallback
+        if model_name == "gemini-3.5-flash-lite":
+            raise Exception("429 RESOURCE_EXHAUSTED: rate limit")
+        # Fail secondary model with transient 503
+        if model_name == "gemini-3.8-flash":
+            raise Exception("503 UNAVAILABLE: overloaded")
+        # Tertiary fallback gemini-4-hydrogen succeeds
+        if model_name == "gemini-4-hydrogen":
+            return json.dumps(MOCK_LLM_OUTPUT), TokenUsage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
+        raise RuntimeError("Unknown model")
+
+    with patch("app.services.llm_service.get_genai_client"):
+        with patch("app.services.llm_service.execute_llm_call", side_effect=fake_execute):
+            brand, analysis, model_used, tokens = await analyze_website_with_llm(
+                website_context="Context",
+                competitor_hints=[],
+                backoff_delays=[0.001, 0.002],  # Fast delays for unit testing
+            )
+
+    assert model_used == "gemini-4-hydrogen"
+    assert brand.name == "CloudNova Tech"
+    # Primary model retried 3 times (initial + 2 backoffs)
+    assert call_history.count("gemini-3.5-flash-lite") == 3
+    # Secondary model retried 3 times (initial + 2 backoffs)
+    assert call_history.count("gemini-3.8-flash") == 3
+    # Tertiary model succeeded on 1st try
+    assert call_history.count("gemini-4-hydrogen") == 1
+
