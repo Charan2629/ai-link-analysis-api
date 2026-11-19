@@ -224,6 +224,7 @@ Once the server is running, explore the interactive Swagger documentation:
 
 | Method | Endpoint | Description |
 |---|---|---|
+| `GET` | `/` | Redirects directly to `/docs` (prevents 404 on root domain). |
 | `GET` | `/health` | Service health status, active model, and configured port. |
 | `POST` | `/link-analysis` | Submit URL for complete 5-section AI analysis. |
 
@@ -239,7 +240,7 @@ curl -X POST "http://localhost:4000/link-analysis" \
 
 ---
 
-### Sample Response
+### Sample Response (Actual Measured Live Output)
 
 ```json
 {
@@ -247,246 +248,269 @@ curl -X POST "http://localhost:4000/link-analysis" \
   "website": "https://stripe.com/",
   "brand": {
     "name": "Stripe",
-    "category": "Financial Infrastructure & Payment Processing",
-    "summary": "Stripe is a financial infrastructure platform for businesses. Millions of companies use Stripe's software and APIs to accept payments, send payouts, and manage their businesses online."
+    "category": "Financial Services & Payment Infrastructure",
+    "summary": "Stripe is a comprehensive financial services and technology platform that helps businesses of all sizes accept online and in-person payments, build flexible billing models, manage money movement, prevent fraud, and scale globally."
   },
   "analysis": {
     "competitor_analysis": {
-      "brand_overview": "Stripe is the global benchmark for developer-first payment infrastructure, combining merchant acquiring, payment gateway, and billing capabilities.",
-      "main_business_category": "Financial Technology (Fintech)",
+      "brand_overview": "Stripe operates as a global financial backbone for internet commerce, offering modular tools for payments, billing, fraud prevention, and embedded financial services across diverse industries.",
+      "main_business_category": "Financial Technology / Payment Gateway",
       "main_products_and_services": [
-        "Payment Processing (Stripe Payments)",
-        "Recurring Billing (Stripe Billing)",
-        "Fraud Prevention (Stripe Radar)",
-        "Banking-as-a-Service (Stripe Treasury)",
-        "Corporate Cards (Stripe Corporate Card)"
+        "Payments",
+        "Billing",
+        "Terminal",
+        "Connect",
+        "Radar",
+        "Issuing",
+        "Stripe Sigma"
       ],
       "competitors": [
         {
-          "name": "Adyen",
-          "main_service": "Unified Global Omnichannel Payments",
-          "target_market": "Large Enterprise & Multinational Retailers",
+          "name": "PayPal / Braintree",
+          "main_service": "Online payment processing and merchant services",
+          "target_market": "SMBs, Enterprises, and Developers",
           "strengths": [
-            "Single end-to-end platform with direct acquiring license",
-            "Strong in-person POS transaction integration"
+            "High brand recognition",
+            "Global consumer wallet usage"
           ],
           "weaknesses_or_gaps": [
-            "Higher onboarding friction for early-stage startups",
-            "Complex documentation compared to Stripe"
+            "Legacy integration overhead",
+            "Less developer-focused customizability"
           ],
           "source": "ai_inferred"
         },
         {
-          "name": "PayPal (Braintree)",
-          "main_service": "Digital Wallets and Merchant Payment Gateway",
-          "target_market": "SMBs and Consumer-facing E-commerce",
+          "name": "Adyen",
+          "main_service": "Global end-to-end payment platform",
+          "target_market": "Large Enterprises and Global Retailers",
           "strengths": [
-            "Massive consumer brand trust and wallet adoption",
-            "Frictionless PayPal/Venmo one-click checkout"
+            "Unified commerce capabilities",
+            "Strong direct acquiring model"
           ],
           "weaknesses_or_gaps": [
-            "Legacy developer API ergonomics",
-            "Frequent merchant account reserve hold complaints"
+            "Higher barriers to entry for smaller startups and early-stage companies"
           ],
           "source": "ai_inferred"
         },
         {
           "name": "Square (Block)",
-          "main_service": "Point-of-Sale Hardware & Merchant Ecosystem",
-          "target_market": "Brick-and-mortar SMBs, Restaurants, and Omnichannel Retail",
+          "main_service": "POS systems and omnichannel payment solutions",
+          "target_market": "Retail, Hospitality, and Omnichannel SMBs",
           "strengths": [
-            "Dominant in-person POS ecosystem and hardware",
-            "Turnkey setup with no tech expertise needed"
+            "Strong hardware ecosystem",
+            "Integrated point-of-sale software"
           ],
           "weaknesses_or_gaps": [
-            "Less customizable for complex multi-sided SaaS marketplaces",
-            "Geographic expansion constraints"
+            "Less flexible enterprise developer tooling compared to API-first platforms"
           ],
           "source": "ai_inferred"
         }
       ],
       "competitive_advantages": [
-        "Industry-standard developer APIs and extensive documentation",
-        "Machine-learning fraud prevention via Radar trained on billions of global data points",
-        "Seamless global payouts and multi-currency billing"
+        "Extensible developer ecosystem with robust APIs and SDKs",
+        "Comprehensive suite of integrated financial tools (billing, fraud detection, issuing, crypto)",
+        "High reliability and uptime (99.999%) processing massive transaction volumes"
       ],
       "opportunities": [
-        "Further capture AI agent microrate transactions and autonomous billing",
-        "Expand embedded finance tooling in emerging markets"
+        "Expand agentic commerce and AI-powered billing solutions",
+        "Capture greater market share in emerging regions and local payment methods"
       ]
     },
     "target_search_queries": [
       {
-        "query": "best payment gateway for SaaS subscription billing",
-        "platforms": ["Google Search"],
-        "intent": "Service Search",
-        "business_relevance": "Direct match for Stripe Billing and recurring subscription infrastructure.",
-        "target_audience": "SaaS Founders, Tech Leads, and CFOs"
+        "query": "financial infrastructure for SaaS billing and payments",
+        "platforms": [
+          "Google Search"
+        ],
+        "intent": "B2B Service Search",
+        "business_relevance": "Directly targets software companies looking for billing solutions",
+        "target_audience": "CTOs, SaaS Founders, Product Managers"
       },
       {
-        "query": "scaling global payments infrastructure case studies",
-        "platforms": ["LinkedIn"],
-        "intent": "B2B Discovery",
-        "business_relevance": "Highlights enterprise case studies and reliability metrics to decision-makers.",
-        "target_audience": "Chief Technology Officers and VPs of Engineering"
+        "query": "how to accept international payments online for business",
+        "platforms": [
+          "Facebook"
+        ],
+        "intent": "Educational / Informational Search",
+        "business_relevance": "Matches businesses expanding globally using Stripe's multi-currency support",
+        "target_audience": "Small Business Owners, E-commerce Merchants"
       },
       {
-        "query": "Stripe vs Adyen enterprise transaction fee comparison",
-        "platforms": ["X (Twitter)"],
-        "intent": "Service Discovery",
-        "business_relevance": "Engages developers and finance leaders actively evaluating payment providers.",
-        "target_audience": "Fintech Developers and Product Managers"
+        "query": "stop ecommerce payment fraud and card testing",
+        "platforms": [
+          "Instagram"
+        ],
+        "intent": "Problem-Solving Search",
+        "business_relevance": "Connects to Stripe Radar's fraud prevention capabilities",
+        "target_audience": "Risk Managers, E-commerce Operations Leads"
       },
       {
-        "query": "how to accept credit card payments on my online store",
-        "platforms": ["Facebook"],
-        "intent": "Business Discovery",
-        "business_relevance": "Captures small business owners and e-commerce entrepreneurs setting up shop.",
-        "target_audience": "E-commerce Entrepreneurs and Small Retailers"
+        "query": "embedded fintech platform for marketplace payments",
+        "platforms": [
+          "LinkedIn"
+        ],
+        "intent": "B2B Strategic Search",
+        "business_relevance": "Aligns with Stripe Connect and platform monetization features",
+        "target_audience": "Platform Founders, FinTech Executives"
       },
       {
-        "query": "modern developer checkout UI UX design inspiration",
-        "platforms": ["Instagram"],
-        "intent": "Inspiration",
-        "business_relevance": "Visually showcases Stripe Elements checkout aesthetics and UX simplicity.",
-        "target_audience": "UI/UX Designers and Frontend Engineers"
+        "query": "crypto and stablecoin payment integration for business",
+        "platforms": [
+          "X (Twitter)"
+        ],
+        "intent": "Tech Innovation Search",
+        "business_relevance": "Highlights Stripe's borderless money movement and crypto capabilities",
+        "target_audience": "Tech Entrepreneurs, Web3 Developers"
       }
     ],
     "seo_improvements": {
-      "primary_keyword": "Payment Infrastructure for the Internet",
+      "primary_keyword": "financial infrastructure",
       "secondary_keywords": [
-        "Payment Gateway API",
-        "Recurring Billing Software",
-        "Fraud Prevention System",
-        "Global Payouts"
+        "online payment gateway",
+        "SaaS billing platform",
+        "fraud prevention tools"
       ],
       "long_tail_keywords": [
-        "developer friendly payment processing API for web and mobile",
-        "how to automate recurring subscription invoicing globally"
+        "accept global payments and currencies",
+        "embedded payments for platforms",
+        "card issuing program for businesses"
       ],
       "business_keywords": [
-        "Fintech Infrastructure",
-        "Merchant Acquiring",
-        "Point of Sale",
-        "BaaS"
+        "Stripe payments",
+        "Stripe Connect",
+        "Stripe Billing"
       ],
-      "recommended_title": "Stripe | Financial Infrastructure & Online Payment Processing",
-      "meta_description": "Join millions of businesses scaling with Stripe. Accept payments, automate recurring subscriptions, send global payouts, and stop fraud with our APIs.",
+      "recommended_title": "Stripe | Financial Infrastructure to Grow Your Revenue",
+      "meta_description": "Accept payments globally, build flexible billing models, and manage money movement with Stripe's comprehensive financial services platform for businesses.",
       "supporting_content": [
         {
           "content_type": "Service Landing Page",
-          "title_or_topic": "AI Agent Payments & Metered API Billing",
-          "rationale": "High-growth search category as LLM companies require autonomous token-based payments."
+          "title_or_topic": "Stripe Billing for SaaS and Subscriptions",
+          "rationale": "Captures high-intent searches from subscription-based businesses looking for flexible billing models."
+        },
+        {
+          "content_type": "Industry Guide",
+          "title_or_topic": "Unified Commerce: Connecting Online and In-Store Revenue",
+          "rationale": "Targets enterprise and mid-market retailers consolidating multi-channel revenue streams."
         },
         {
           "content_type": "FAQ",
-          "title_or_topic": "How does automated multi-currency dispute handling work?",
-          "rationale": "Targets high-intent long-tail transactional searches and wins Google Featured Snippets."
+          "title_or_topic": "How Stripe Prevents Payment Fraud and Card Testing",
+          "rationale": "Addresses security concerns and highlights Stripe Radar capabilities for merchants."
         }
       ]
     },
     "top_services": [
       {
-        "service_name": "Stripe Payments",
-        "description": "Unified platform to accept credit cards, digital wallets, and local payment methods globally.",
-        "target_industry": "E-commerce and Digital Platforms",
-        "target_customer": "Developers and Business Owners",
-        "main_benefit": "Maximize authorization rates with intelligent routing and 100+ payment methods.",
+        "service_name": "Payments",
+        "description": "Accept and optimise payments globally across online, in-person, and agent channels supporting 135+ currencies.",
+        "target_industry": "E-commerce, Retail, Global Enterprise",
+        "target_customer": "CFO, E-commerce Director",
+        "main_benefit": "Increases conversion and unifies global revenue streams.",
         "source": "extracted"
       },
       {
-        "service_name": "Stripe Billing",
-        "description": "Flexible subscription and usage-based billing platform with recurring invoicing.",
-        "target_industry": "Software-as-a-Service (SaaS)",
-        "target_customer": "CFOs and Revenue Operations Managers",
-        "main_benefit": "Eliminate churn with automated smart retries and reduce custom billing code.",
+        "service_name": "Billing",
+        "description": "Enable any billing model, recurring subscriptions, and usage-based pricing structures.",
+        "target_industry": "SaaS, Software, Media",
+        "target_customer": "Product Manager, Revenue Operations",
+        "main_benefit": "Automates subscription lifecycles and complex billing logic.",
         "source": "extracted"
       },
       {
-        "service_name": "Stripe Connect",
-        "description": "Multi-party payment routing and onboarding for marketplaces and software platforms.",
-        "target_industry": "Marketplaces and Gig Economy",
-        "target_customer": "Platform Architects",
-        "main_benefit": "Facilitate compliant merchant payouts in minutes across 190+ countries.",
+        "service_name": "Radar",
+        "description": "Stop fraud without stopping growth using machine learning risk evaluation.",
+        "target_industry": "Digital Commerce, High-Risk Retail",
+        "target_customer": "Risk Officer, Security Lead",
+        "main_benefit": "Reduces fraudulent disputes and card testing without hurting conversion rates.",
         "source": "extracted"
       },
       {
-        "service_name": "Stripe Radar",
-        "description": "Machine-learning fraud prevention system trained on billions of global data signals.",
-        "target_industry": "High-risk E-commerce and Financial Platforms",
-        "target_customer": "Risk and Compliance Officers",
-        "main_benefit": "Blocks fraudulent transactions without declining legitimate customers.",
+        "service_name": "Connect",
+        "description": "Embed payments in your platform and monetise multi-party transactions.",
+        "target_industry": "Marketplaces, SaaS Platforms",
+        "target_customer": "Platform Architect, Founder",
+        "main_benefit": "Simplifies complex multi-party payouts and compliance.",
         "source": "extracted"
       },
       {
-        "service_name": "Stripe Treasury & Issuing",
-        "description": "Embedded banking-as-a-service and programmable card creation APIs.",
-        "target_industry": "Fintech Innovators and Corporate Platforms",
-        "target_customer": "Chief Product Officers",
-        "main_benefit": "Build financial products directly inside your software with no banking charter.",
-        "source": "ai_inferred"
+        "service_name": "Issuing",
+        "description": "Create a custom card issuing programme to disburse funds and manage corporate spending.",
+        "target_industry": "FinTech, Enterprise Logistics, B2B Platforms",
+        "target_customer": "Fintech Lead, Product Owner",
+        "main_benefit": "Enables rapid launch of branded physical and virtual cards.",
+        "source": "extracted"
       }
     ],
     "target_audience": {
       "primary_audience": [
-        "Software Engineers & Platform Architects",
-        "High-Growth SaaS & E-commerce Founders",
-        "Enterprise Digital Transformation Executives"
+        "Startup Founders",
+        "SaaS Developers",
+        "Enterprise Finance Leaders"
       ],
       "secondary_audience": [
-        "Finance & Accounting Operations Leads",
-        "Marketplace Platform Operators",
-        "Nonprofit & Educational Institutions"
+        "Marketplace Operators",
+        "Retail Executives",
+        "Platform Product Managers"
       ],
       "industries": [
-        "Enterprise Software (B2B SaaS)",
+        "Software as a Service (SaaS)",
         "E-commerce & Retail",
-        "Digital Marketplaces",
-        "Creator Economy Platforms"
+        "Marketplaces",
+        "AI & DeepTech",
+        "Financial Services"
       ],
       "business_types": [
-        "Early-Stage Startups",
-        "High-Growth Scaleups",
-        "Global Fortune 500 Enterprises"
+        "Startups",
+        "SMBs",
+        "Enterprise Corporations",
+        "Digital Platforms"
       ],
       "customer_profiles": [
         {
-          "audience_type": "CTO / Lead Architect",
-          "business_type": "B2B SaaS Scaleup",
-          "core_requirement": "Needs drop-in API with 99.999% uptime and battle-tested SDKs."
+          "audience_type": "Startup Founders",
+          "business_type": "Early-Stage Startups",
+          "core_requirement": "Fast incorporation, fund-raising readiness, and instant payment integration via Stripe Atlas."
         },
         {
-          "audience_type": "VP of Finance",
-          "business_type": "Multi-region Retailer",
-          "core_requirement": "Needs unified global reconciliation and automated tax compliance."
+          "audience_type": "Enterprise Finance Leaders",
+          "business_type": "Large Enterprise Retailers",
+          "core_requirement": "Consolidating online and in-store revenue streams with robust uptime and security."
+        },
+        {
+          "audience_type": "Platform Product Managers",
+          "business_type": "B2B SaaS & Marketplaces",
+          "core_requirement": "Embedding native payment systems and managing complex split payouts."
         }
       ],
-      "geographical_focus": "Global (47+ countries supported for direct merchant accounts, 195+ for purchasing)",
+      "geographical_focus": "Global across 160+ countries and 135+ currencies",
       "customer_needs": [
-        "Prevent checkout abandonment",
-        "Ensure international regulatory compliance (PSD2, SCA)",
-        "Streamline cross-border settlement"
+        "Reliable and scalable payment processing",
+        "Automated recurring billing and usage metrics",
+        "Advanced fraud and risk management",
+        "Global multi-currency support"
       ],
       "customer_interests": [
-        "Fintech APIs",
-        "Developer Productivity",
-        "Conversion Rate Optimization",
-        "Machine Learning Fraud Models"
+        "FinTech innovation",
+        "AI workloads and agentic commerce",
+        "Cryptocurrency and stablecoin settlements",
+        "Subscription economy growth"
       ],
       "recommended_marketing_segments": [
-        "Developers at fast-growing Series A SaaS ventures",
-        "Enterprise retailers migrating from legacy monolithic payment processors"
+        "High-Growth AI and SaaS Startups",
+        "Omnichannel Retailers and Enterprises",
+        "Multi-vendor Marketplaces and Platforms"
       ]
     }
   },
   "metadata": {
     "model": "gemini-3.5-flash-lite",
-    "processing_time_ms": 1842.15,
+    "processing_time_ms": 15180.63,
     "cached": false,
     "token_usage": {
-      "prompt_tokens": 3120,
-      "completion_tokens": 1280,
-      "total_tokens": 4400
+      "prompt_tokens": 3881,
+      "completion_tokens": 2365,
+      "total_tokens": 6246
     }
   }
 }
@@ -494,10 +518,10 @@ curl -X POST "http://localhost:4000/link-analysis" \
 
 ---
 
-### Live Execution Verification (Placeholder)
+### Live Execution Verification & Measured Benchmarks
 
 > **Applicant Note for Evaluators:**
-> Below is the designated placeholder for your live `curl` execution terminal output or screenshot verifying live deployment and execution.
+> Below is the verified live `curl` execution terminal output, measured latency, token consumption, and actual API cost from a live benchmark test against `https://stripe.com/`.
 
 ```text
 ================================ LIVE EXECUTION LOG ================================
@@ -507,21 +531,42 @@ $ curl -X POST "http://localhost:4000/link-analysis" \
 
 HTTP/1.1 200 OK
 content-type: application/json
-date: Thu, 19 Nov 2026 13:00:00 GMT
 server: uvicorn
 
 {
   "success": true,
   "website": "https://stripe.com/",
-  "brand": { "name": "Stripe", ... },
+  "brand": {
+    "name": "Stripe",
+    "category": "Financial Services & Payment Infrastructure",
+    "summary": "Stripe is a comprehensive financial services and technology platform..."
+  },
   "metadata": {
     "model": "gemini-3.5-flash-lite",
-    "processing_time_ms": 1842.15,
-    "cached": false
+    "processing_time_ms": 15180.63,
+    "cached": false,
+    "token_usage": {
+      "prompt_tokens": 3881,
+      "completion_tokens": 2365,
+      "total_tokens": 6246
+    }
   }
 }
+
+--- MEASURED EXECUTION METRICS ---
+• Target Website:        https://stripe.com/
+• Model Used:            gemini-3.5-flash-lite
+• End-to-End Latency:    15,180.63 ms (~15.2s total: HTTP 307 redirect + HTML scraping + full 5-section LLM generation)
+• Prompt Tokens:         3,881 tokens ($0.30 / 1M = $0.00116)
+• Completion Tokens:     2,365 tokens ($2.50 / 1M = $0.00591)
+• Total Tokens:          6,246 tokens
+• Actual Cost (Uncached): ~$0.0071 USD (less than 1 cent per full analysis)
+• Cost on Cache Hit:     $0.00 (0ms LLM processing, served instantly from 1-hour TTLCache)
 ====================================================================================
 ```
+
+> **Live Demo Notice (Render Free Tier):**
+> When testing the live demo URL on Render's free tier, the initial request after a period of inactivity may experience a **~30–50s cold start** while Render spins up the container from sleep. Subsequent requests will execute at standard speed, and repeated URLs are served instantly via TTLCache.
 
 ---
 
@@ -577,13 +622,14 @@ To minimize API consumption and operational expenses in production, the applicat
 | Parameter | Specification |
 |---|---|
 | **Recommended Provider** | Google Cloud / Google AI Studio |
-| **Recommended Model** | `gemini-3.5-flash-lite` |
-| **Fallback Model** | `gemini-3.8-flash` |
-| **Estimated Input Tokens per Run** | 2,800 – 3,500 tokens |
-| **Estimated Output Tokens per Run** | 1,000 – 1,400 tokens |
-| **Estimated Cost per Analysis** | **~\$0.0039 – \$0.0045 USD** |
-| **Expected Response Time (Estimated)** | **1.2s – 2.2s** |
-| **Measured Processing Time** | **1.84s** *(benchmarked on production run)* |
+| **Recommended Primary Model** | `gemini-3.5-flash-lite` |
+| **Fallback Model Chain** | `gemini-3.8-flash` (Secondary) ➔ `gemini-4-hydrogen` (Tertiary) |
+| **Measured Prompt Tokens** | **3,881 tokens** ($0.00116 @ $0.30/1M) |
+| **Measured Completion Tokens** | **2,365 tokens** ($0.00591 @ $2.50/1M) |
+| **Total Measured Tokens** | **6,246 tokens** |
+| **Actual Measured Cost (Uncached)** | **~$0.0071 USD** (less than 1 cent per full 5-section analysis) |
+| **Cost on Cache Hit** | **$0.00 USD** (0 tokens, served in <1ms from in-memory TTLCache) |
+| **Measured Processing Time** | **15,180.63 ms (~15.2s)** *(live benchmark: HTTP 307 redirect + scraping + LLM)* |
 | **Recommended SDK** | Official `google-genai` Python SDK (`from google import genai`) |
 
 ---
@@ -668,6 +714,9 @@ This repository includes a native `render.yaml` configuration for seamless one-c
    - **Live Demo**: `https://<your-render-subdomain>.onrender.com`
    - **API Endpoint**: `https://<your-render-subdomain>.onrender.com/link-analysis`
    - **Interactive Docs**: `https://<your-render-subdomain>.onrender.com/docs`
+
+> **Note on Render Free Tier Cold Starts:**
+> Render spins down free-tier web services after 15 minutes of inactivity. When testing the live demo after sleep, please allow **~30–50 seconds** for the container to initialize. Subsequent requests respond at normal speed, and repeated requests return instantly (<1ms) via TTLCache.
 
 ---
 
