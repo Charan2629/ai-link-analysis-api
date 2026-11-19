@@ -22,6 +22,7 @@ from app.schemas import (
 from app.services.analysis_service import analysis_cache
 from app.services.llm_service import (
     analyze_website_with_llm,
+    call_groq_api,
     execute_llm_call,
     is_transient_error,
 )
@@ -591,40 +592,140 @@ def test_gemini_4_hydrogen_config_no_sampling_params():
 
 
 @pytest.mark.asyncio
-async def test_transient_exponential_backoff_and_fallback_chain():
+async def test_gemini_fast_failover_single_attempt():
     """
-    Verify analyze_website_with_llm retries with exponential backoff on transient errors
-    and falls back through the chain (gemini-3.5-flash-lite -> gemini-3.8-flash -> gemini-4-hydrogen).
+    Verify analyze_website_with_llm uses at most 1 attempt per Gemini model (fail fast)
+    and moves to secondary model (gemini-3.8-flash) without multi-retry hangs.
     """
     call_history = []
 
     def fake_execute(client, model_name, prompt):
         call_history.append(model_name)
-        # Fail primary model with transient 429 twice, then 429 again to force fallback
         if model_name == "gemini-3.5-flash-lite":
-            raise Exception("429 RESOURCE_EXHAUSTED: rate limit")
-        # Fail secondary model with transient 503
-        if model_name == "gemini-3.8-flash":
             raise Exception("503 UNAVAILABLE: overloaded")
-        # Tertiary fallback gemini-4-hydrogen succeeds
-        if model_name == "gemini-4-hydrogen":
+        if model_name == "gemini-3.8-flash":
             return json.dumps(MOCK_LLM_OUTPUT), TokenUsage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
-        raise RuntimeError("Unknown model")
+        raise RuntimeError(f"Unexpected model: {model_name}")
 
     with patch("app.services.llm_service.get_genai_client"):
         with patch("app.services.llm_service.execute_llm_call", side_effect=fake_execute):
             brand, analysis, model_used, tokens = await analyze_website_with_llm(
                 website_context="Context",
                 competitor_hints=[],
-                backoff_delays=[0.001, 0.002],  # Fast delays for unit testing
+                gemini_timeout=5.0,
+                inter_model_delay=0.01,
             )
 
-    assert model_used == "gemini-4-hydrogen"
+    assert model_used == "gemini-3.8-flash"
     assert brand.name == "CloudNova Tech"
-    # Primary model retried 3 times (initial + 2 backoffs)
-    assert call_history.count("gemini-3.5-flash-lite") == 3
-    # Secondary model retried 3 times (initial + 2 backoffs)
-    assert call_history.count("gemini-3.8-flash") == 3
-    # Tertiary model succeeded on 1st try
-    assert call_history.count("gemini-4-hydrogen") == 1
+    # Exactly 1 attempt per Gemini model, no stacked retries
+    assert call_history.count("gemini-3.5-flash-lite") == 1
+    assert call_history.count("gemini-3.8-flash") == 1
+
+
+@pytest.mark.asyncio
+async def test_groq_cross_provider_fallback_on_gemini_503():
+    """
+    Verify cross-provider fallback to Groq (openai/gpt-oss-120b) when all Gemini
+    models fail with transient 503 errors and GROQ_API_KEY is configured.
+    """
+    def fake_gemini(client, model_name, prompt):
+        raise Exception("503 UNAVAILABLE: Gemini infrastructure outage")
+
+    mock_groq_response = {
+        "id": "chatcmpl-test-groq-123",
+        "object": "chat.completion",
+        "created": 1700000000,
+        "model": "openai/gpt-oss-120b",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": json.dumps(MOCK_LLM_OUTPUT),
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 1250,
+            "completion_tokens": 820,
+            "total_tokens": 2070,
+        },
+    }
+
+    mock_post_resp = MagicMock()
+    mock_post_resp.status_code = 200
+    mock_post_resp.json.return_value = mock_groq_response
+
+    with patch("app.services.llm_service.get_genai_client"):
+        with patch("app.services.llm_service.execute_llm_call", side_effect=fake_gemini):
+            with patch("app.services.llm_service.get_settings") as mock_settings:
+                settings_obj = MagicMock()
+                settings_obj.GEMINI_MODEL = "gemini-3.5-flash-lite"
+                settings_obj.GEMINI_FALLBACK_MODEL = "gemini-3.8-flash"
+                settings_obj.GROQ_API_KEY = "gsk_valid_mock_key"
+                settings_obj.GROQ_MODEL = "openai/gpt-oss-120b"
+                mock_settings.return_value = settings_obj
+
+                with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_post_resp):
+                    brand, analysis, model_used, tokens = await analyze_website_with_llm(
+                        website_context="Context",
+                        competitor_hints=[],
+                        gemini_timeout=2.0,
+                        inter_model_delay=0.01,
+                    )
+
+    assert model_used == "openai/gpt-oss-120b"
+    assert brand.name == "CloudNova Tech"
+    assert tokens.total_tokens == 2070
+    assert tokens.prompt_tokens == 1250
+    assert tokens.completion_tokens == 820
+
+
+@pytest.mark.asyncio
+async def test_call_groq_api_direct():
+    """
+    Direct unit test for call_groq_api verifying JSON payload options
+    (response_format json_object, reasoning_effort low, reasoning_format hidden).
+    """
+    mock_groq_response = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps(MOCK_LLM_OUTPUT),
+                }
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 500,
+            "completion_tokens": 300,
+            "total_tokens": 800,
+        },
+    }
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = mock_groq_response
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp) as mock_post:
+        brand, analysis, model_name, tokens = await call_groq_api(
+            prompt="Analyze this website and output JSON",
+            api_key="gsk_test_direct_key",
+            model_name="openai/gpt-oss-120b",
+        )
+
+    assert model_name == "openai/gpt-oss-120b"
+    assert brand.name == "CloudNova Tech"
+    assert tokens.total_tokens == 800
+
+    # Verify request payload parameters sent to Groq
+    call_kwargs = mock_post.call_args.kwargs
+    sent_payload = call_kwargs.get("json", {})
+    assert sent_payload.get("model") == "openai/gpt-oss-120b"
+    assert sent_payload.get("response_format") == {"type": "json_object"}
+    assert sent_payload.get("reasoning_effort") == "low"
+    assert sent_payload.get("reasoning_format") == "hidden"
+    assert sent_payload.get("max_completion_tokens") == 4096
+
 

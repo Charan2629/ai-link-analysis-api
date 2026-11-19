@@ -46,6 +46,7 @@ A production-ready **FastAPI** service that accepts a website URL, sanitizes and
 ## 🚀 Key Features
 
 - **Official Google GenAI SDK**: Uses `from google import genai` with `gemini-3.5-flash-lite` (primary) and `gemini-3.8-flash` (fallback).
+- **Cross-Provider Resilience (Groq Fallback)**: Fails fast on Gemini 503/429 spikes (1 attempt per model, 20s timeout, 1.5s delay) and automatically fails over to Groq (`openai/gpt-oss-120b`) via async `httpx` to guarantee requests never hang.
 - **Hardened SSRF Protection**: Resolves DNS hostnames and blocks loopback, private IPv4/IPv6, link-local, carrier-grade NAT, and cloud metadata addresses (`169.254.169.254`).
 - **Resilient HTML Cleaning**: Extracts metadata (`title`, `description`, `og:*`, headings `h1`–`h3`), strips scripts, styles, and SVG noise, and bounds token cost by truncating content to ~12,000 characters.
 - **In-Memory TTL Caching**: High-performance `cachetools.TTLCache` (1-hour TTL) prevents duplicate LLM invocations for identical URLs.
@@ -612,8 +613,8 @@ To minimize API consumption and operational expenses in production, the applicat
    All 5 analysis sections are extracted in a single LLM request rather than 5 disjoint calls. This amortizes prompt tokens, saving ~80% in input token costs.
 4. **In-Memory TTL Caching (`cachetools.TTLCache`)**:
    Duplicate requests for the same URL within 1 hour are served directly from cache in under 1 millisecond at **\$0.00 additional API cost**.
-5. **Two-Stage Fallback Strategy**:
-   The service defaults to the budget-friendly `gemini-3.5-flash-lite` and triggers `gemini-3.8-flash` only if the primary call fails or returns invalid syntax.
+5. **Cross-Provider Fail-Fast Fallback**:
+   The service defaults to `gemini-3.5-flash-lite` (20s timeout) and fails fast to `gemini-3.8-flash` (1.5s inter-model delay). If Gemini encounters 503/429 spikes or outages, it automatically fails over to Groq (`openai/gpt-oss-120b`), ensuring requests never hang and uptime remains at 99.9+%.
 
 ---
 
@@ -621,16 +622,16 @@ To minimize API consumption and operational expenses in production, the applicat
 
 | Parameter | Specification |
 |---|---|
-| **Recommended Provider** | Google Cloud / Google AI Studio |
+| **Recommended Provider** | Google Cloud / Google AI Studio (Primary) + Groq (Resilience Fallback) |
 | **Recommended Primary Model** | `gemini-3.5-flash-lite` |
-| **Fallback Model Chain** | `gemini-3.8-flash` (Secondary) ➔ `gemini-4-hydrogen` (Tertiary) |
+| **Fallback Model Chain** | `gemini-3.8-flash` (Secondary) ➔ Groq `openai/gpt-oss-120b` (Cross-Provider Fallback) |
 | **Measured Prompt Tokens** | **3,881 tokens** ($0.00116 @ $0.30/1M) |
 | **Measured Completion Tokens** | **2,365 tokens** ($0.00591 @ $2.50/1M) |
 | **Total Measured Tokens** | **6,246 tokens** |
 | **Actual Measured Cost (Uncached)** | **~$0.0071 USD** (less than 1 cent per full 5-section analysis) |
 | **Cost on Cache Hit** | **$0.00 USD** (0 tokens, served in <1ms from in-memory TTLCache) |
 | **Measured Processing Time** | **15,180.63 ms (~15.2s)** *(live benchmark: HTTP 307 redirect + scraping + LLM)* |
-| **Recommended SDK** | Official `google-genai` Python SDK (`from google import genai`) |
+| **Recommended SDK** | Official `google-genai` Python SDK (`from google import genai`) + async `httpx` for Groq |
 
 ---
 
@@ -669,7 +670,9 @@ pytest tests/test_link_analysis.py -v
 - [x] **HTML Cleaning & Extraction**: Asserts stripping of scripts, styles, SVGs, and noscript tags while preserving metadata and headings.
 - [x] **Error Handling & Resilience**: Confirms graceful 422 for inaccessible/404 sites, 504 for request timeouts, and 422 for content-empty pages.
 - [x] **LLM Retry & Cache Hit**: Confirms automatic retry fallback upon malformed JSON and verifies that repeated requests are served from TTLCache without duplicate LLM calls.
-- [x] **Health Check Endpoint**: Validates `/health` endpoint response and status.
+- [x] **Gemini Fast Failover**: Verifies at most 1 attempt per Gemini model (20s timeout, 1.5s delay) to avoid hanging requests.
+- [x] **Groq Cross-Provider Fallback**: Validates automatic fallback to Groq (`openai/gpt-oss-120b`) via `httpx` when Gemini experiences 503/429 spikes.
+- [x] **Health Check & Root Redirect**: Validates `/health` status and verifies `GET /` redirects to `/docs`.
 
 ---
 

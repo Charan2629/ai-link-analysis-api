@@ -3,6 +3,7 @@ import json
 import logging
 import re
 from typing import Any, Dict, Optional, Tuple
+import httpx
 from google import genai
 from google.genai import types
 
@@ -177,8 +178,10 @@ def clean_raw_json(raw_text: str) -> str:
 
 
 def is_transient_error(exc: Exception) -> bool:
-    """Check if exception represents a transient 503 UNAVAILABLE or 429 RESOURCE_EXHAUSTED error."""
-    # Check google.genai APIError code and status attributes
+    """Check if exception represents a transient 503 UNAVAILABLE, 429 RESOURCE_EXHAUSTED, or timeout error."""
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return True
+
     code = getattr(exc, "code", None)
     status_str = getattr(exc, "status", None)
     if code in (429, 503):
@@ -197,6 +200,8 @@ def is_transient_error(exc: Exception) -> bool:
             "RESOURCE_EXHAUSTED",
             "QUOTA EXCEEDED",
             "RATE LIMIT",
+            "TIMED OUT",
+            "TIMEOUT",
         )
     )
 
@@ -247,85 +252,171 @@ def execute_llm_call(
     return raw_text, token_usage
 
 
+async def call_groq_api(
+    prompt: str,
+    api_key: str,
+    model_name: str = "openai/gpt-oss-120b",
+    timeout: float = 30.0,
+) -> Tuple[BrandInfo, AnalysisResult, str, TokenUsage]:
+    """
+    Execute cross-provider fallback call to Groq API using async httpx.
+    Configured for json_object response format with low/hidden reasoning effort.
+    """
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model_name,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert business intelligence and technical SEO analyst. "
+                    "You must output only a valid JSON object matching the requested schema."
+                ),
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+        "response_format": {"type": "json_object"},
+        "reasoning_effort": "low",
+        "reasoning_format": "hidden",
+        "max_completion_tokens": 4096,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+
+        if resp.status_code != 200:
+            raise LLMServiceException(
+                f"Groq API returned HTTP {resp.status_code}: {resp.text}"
+            )
+
+        data = resp.json()
+        choices = data.get("choices", [])
+        if not choices:
+            raise LLMServiceException("Groq API returned no choices in response.")
+
+        raw_content = choices[0].get("message", {}).get("content", "")
+        if not raw_content:
+            raise LLMServiceException("Groq API returned empty message content.")
+
+        cleaned = clean_raw_json(raw_content)
+        parsed = json.loads(cleaned)
+
+        brand = BrandInfo.model_validate(parsed.get("brand", {}))
+        analysis = AnalysisResult.model_validate(parsed.get("analysis", {}))
+
+        usage_dict = data.get("usage", {})
+        token_usage = TokenUsage(
+            prompt_tokens=usage_dict.get("prompt_tokens"),
+            completion_tokens=usage_dict.get("completion_tokens"),
+            total_tokens=usage_dict.get("total_tokens"),
+        )
+
+        return brand, analysis, model_name, token_usage
+
+    except LLMServiceException:
+        raise
+    except Exception as exc:
+        logger.error(f"Groq API fallback failed: {exc}")
+        raise LLMServiceException(f"Groq API fallback request failed: {exc}") from exc
+
+
 async def analyze_website_with_llm(
     website_context: str,
     competitor_hints: list[str],
-    backoff_delays: Optional[list[float]] = None,
+    gemini_timeout: float = 20.0,
+    inter_model_delay: float = 1.5,
 ) -> Tuple[BrandInfo, AnalysisResult, str, TokenUsage]:
     """
-    Analyze website content using Google Gemini via google-genai SDK.
-    Fallback chain: gemini-3.5-flash-lite -> gemini-3.8-flash -> gemini-4-hydrogen.
-    Retries with short exponential backoff (2s, then 4s) for transient 503/429 errors.
+    Analyze website content with fast failover:
+    1. Primary Gemini: gemini-3.5-flash-lite (1 attempt, 20s timeout)
+    2. Secondary Gemini: gemini-3.8-flash (1 attempt, 20s timeout, 1.5s delay)
+    3. Cross-provider fallback: Groq (openai/gpt-oss-120b) if configured and Gemini fails
     """
     settings = get_settings()
     client = get_genai_client()
 
     prompt = build_analysis_prompt(website_context, competitor_hints)
 
-    # Fallback chain across 3 models
-    models_to_try = [
+    # Gemini model chain: at most 1 attempt per model with 20s timeout
+    gemini_models = [
         settings.GEMINI_MODEL or "gemini-3.5-flash-lite",
         settings.GEMINI_FALLBACK_MODEL or "gemini-3.8-flash",
-        settings.GEMINI_FALLBACK_MODEL_2 or "gemini-4-hydrogen",
     ]
 
-    transient_delays = backoff_delays if backoff_delays is not None else [2.0, 4.0]
     last_error: Optional[Exception] = None
+    had_transient_error = False
 
-    for attempt_idx, model_name in enumerate(models_to_try):
-        for retry_idx in range(len(transient_delays) + 1):
-            try:
-                logger.info(
-                    f"Attempting LLM analysis with model '{model_name}' "
-                    f"(chain {attempt_idx + 1}/{len(models_to_try)}, attempt {retry_idx + 1})"
-                )
-                raw_text, token_usage = await asyncio.to_thread(
+    for attempt_idx, model_name in enumerate(gemini_models):
+        try:
+            logger.info(
+                f"Attempting LLM analysis with Gemini model '{model_name}' "
+                f"(model {attempt_idx + 1}/{len(gemini_models)}, max timeout: {gemini_timeout}s)"
+            )
+            raw_text, token_usage = await asyncio.wait_for(
+                asyncio.to_thread(
                     execute_llm_call,
                     client,
                     model_name,
                     prompt,
-                )
+                ),
+                timeout=gemini_timeout,
+            )
 
-                cleaned_json = clean_raw_json(raw_text)
-                parsed_data = json.loads(cleaned_json)
+            cleaned_json = clean_raw_json(raw_text)
+            parsed_data = json.loads(cleaned_json)
 
-                # Validate sections
-                brand = BrandInfo.model_validate(parsed_data.get("brand", {}))
-                analysis = AnalysisResult.model_validate(parsed_data.get("analysis", {}))
+            # Validate sections
+            brand = BrandInfo.model_validate(parsed_data.get("brand", {}))
+            analysis = AnalysisResult.model_validate(parsed_data.get("analysis", {}))
 
-                return brand, analysis, model_name, token_usage
+            return brand, analysis, model_name, token_usage
 
-            except Exception as exc:
-                if is_transient_error(exc):
-                    if retry_idx < len(transient_delays):
-                        backoff = transient_delays[retry_idx]
-                        logger.warning(
-                            f"Transient error ({exc}) on model '{model_name}'. "
-                            f"Retrying with exponential backoff in {backoff}s..."
-                        )
-                        await asyncio.sleep(backoff)
-                        continue
-                    else:
-                        logger.warning(
-                            f"Exhausted transient retries for model '{model_name}'. "
-                            "Proceeding to next model in fallback chain..."
-                        )
-                        last_error = LLMServiceException(f"Transient limit on '{model_name}': {exc}")
-                        break
-
-                if isinstance(exc, (json.JSONDecodeError, ValueError)):
-                    logger.warning(
-                        f"JSON parse error on attempt {attempt_idx + 1} with model '{model_name}': {exc}"
-                    )
-                    last_error = LLMServiceException(
-                        f"LLM output could not be parsed into required JSON schema: {exc}"
-                    )
-                    break
-
-                logger.warning(
-                    f"LLM execution error on model '{model_name}': {exc}"
-                )
+        except asyncio.TimeoutError:
+            logger.warning(f"Gemini model '{model_name}' timed out after {gemini_timeout}s.")
+            last_error = LLMServiceException(f"Gemini model '{model_name}' timed out after {gemini_timeout}s.")
+            had_transient_error = True
+        except Exception as exc:
+            if is_transient_error(exc):
+                had_transient_error = True
+                logger.warning(f"Transient error on Gemini model '{model_name}': {exc}")
                 last_error = exc if isinstance(exc, LLMServiceException) else LLMServiceException(str(exc))
-                break
+            elif isinstance(exc, (json.JSONDecodeError, ValueError)):
+                logger.warning(f"JSON parse error on model '{model_name}': {exc}")
+                last_error = LLMServiceException(f"LLM output could not be parsed into required JSON schema: {exc}")
+            else:
+                logger.warning(f"Error on model '{model_name}': {exc}")
+                last_error = exc if isinstance(exc, LLMServiceException) else LLMServiceException(str(exc))
 
-    raise last_error or LLMServiceException("All LLM analysis attempts failed.")
+        # Short delay before moving to next Gemini model (if another model remains)
+        if attempt_idx < len(gemini_models) - 1:
+            logger.info(f"Waiting {inter_model_delay}s before trying next Gemini model...")
+            await asyncio.sleep(inter_model_delay)
+
+    # Cross-provider fallback to Groq when Gemini fails
+    if settings.GROQ_API_KEY:
+        groq_model = settings.GROQ_MODEL or "openai/gpt-oss-120b"
+        logger.info(
+            f"All Gemini models exhausted (transient_error={had_transient_error}). "
+            f"Triggering cross-provider fallback to Groq ({groq_model})..."
+        )
+        try:
+            return await call_groq_api(
+                prompt=prompt,
+                api_key=settings.GROQ_API_KEY,
+                model_name=groq_model,
+            )
+        except Exception as groq_exc:
+            logger.error(f"Groq fallback also failed: {groq_exc}")
+            raise LLMServiceException(
+                f"Both Gemini and Groq fallback failed. Gemini error: {last_error}; Groq error: {groq_exc}"
+            ) from groq_exc
+
+    raise last_error or LLMServiceException("All Gemini LLM analysis attempts failed.")
